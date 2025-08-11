@@ -2,7 +2,29 @@ node_modules/
 dist/
 playwright-report/
 test-results/
-.env
+
 *.log
 .DS_Store
 Thumbs.db
+
+# Screenshots and test artifacts
+screenshots/
+test-results/
+playwright-report/
+
+# Debug and temporary files
+debug-*.spec.ts
+simple-debug.spec.ts
+**/last workingversion.*
+*.debug.*
+
+# Assignment files
+prompt.md
+FIXES_APPLIED.md
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
