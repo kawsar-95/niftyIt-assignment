@@ -1,0 +1,189 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of test to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - quick
+          - parallel
+          - small
+          - large
+          - monofacial
+          - bifacial
+
+jobs:
+  test:
+    timeout-minutes: 120
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group: [1, 2, 3, 4]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+    
+    - name: Create screenshots directory
+      run: mkdir -p screenshots
+    
+    - name: Run Playwright tests - All
+      if: github.event.inputs.test_type == 'all' || github.event.inputs.test_type == ''
+      run: npm run test:parallel
+      env:
+        PLAYWRIGHT_GROUP: ${{ matrix.test-group }}
+    
+    - name: Run Playwright tests - Quick
+      if: github.event.inputs.test_type == 'quick'
+      run: npm run test:quick
+    
+    - name: Run Playwright tests - Small capacity
+      if: github.event.inputs.test_type == 'small'
+      run: npm run test:small
+    
+    - name: Run Playwright tests - Large capacity
+      if: github.event.inputs.test_type == 'large'
+      run: npm run test:large
+    
+    - name: Run Playwright tests - Monofacial modules
+      if: github.event.inputs.test_type == 'monofacial'
+      run: npm run test:monofacial
+    
+    - name: Run Playwright tests - Bifacial modules
+      if: github.event.inputs.test_type == 'bifacial'
+      run: npm run test:bifacial
+    
+    - name: Run Playwright tests - Parallel (default)
+      if: github.event.inputs.test_type == 'parallel'
+      run: npm run test:parallel
+    
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report-group-${{ matrix.test-group }}
+        path: playwright-report/
+        retention-days: 30
+    
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-group-${{ matrix.test-group }}
+        path: test-results/
+        retention-days: 7
+    
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: screenshots-group-${{ matrix.test-group }}
+        path: screenshots/
+        retention-days: 7
+
+  # Merge reports from all test groups
+  merge-reports:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: playwright-report-group-*
+        path: all-reports
+        merge-multiple: true
+    
+    - name: Merge HTML Reports
+      run: |
+        mkdir -p merged-report
+        if [ -d "all-reports" ]; then
+          npx playwright merge-reports --reporter html all-reports || echo "No reports to merge"
+        fi
+    
+    - name: Upload merged report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: merged-playwright-report
+        path: merged-report/
+        retention-days: 30
+
+  # Deploy report to GitHub Pages (optional)
+  deploy-report:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: merge-reports
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Download merged report
+      uses: actions/download-artifact@v4
+      with:
+        name: merged-playwright-report
+        path: ./report
+    
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+    
+    - name: Upload to GitHub Pages
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: ./report
+    
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
+
+  # Notification job (optional)
+  notify:
+    if: always()
+    needs: [test, merge-reports]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Test Summary
+      run: |
+        echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- Test job status: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Report merge status: ${{ needs.merge-reports.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Workflow triggered by: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "- Test type selected: ${{ github.event.inputs.test_type }}" >> $GITHUB_STEP_SUMMARY
+        fi

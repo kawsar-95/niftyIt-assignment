@@ -1,0 +1,140 @@
+name: Nightly Comprehensive Tests
+
+on:
+  schedule:
+    # Run every night at 1 AM UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: 'Browser to test with'
+        required: false
+        default: 'chromium'
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
+          - all
+      capacity_filter:
+        description: 'Filter by capacity'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - small
+          - large
+
+jobs:
+  comprehensive-test:
+    timeout-minutes: 180
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium]
+        include:
+          - browser: chromium
+            project: "chromium"
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: |
+        if [ "${{ github.event.inputs.browser }}" == "all" ]; then
+          npx playwright install --with-deps
+        else
+          npx playwright install ${{ github.event.inputs.browser }} --with-deps
+        fi
+    
+    - name: Create directories
+      run: |
+        mkdir -p screenshots
+        mkdir -p test-results
+    
+    - name: Run comprehensive tests - All capacities
+      if: github.event.inputs.capacity_filter == 'all' || github.event.inputs.capacity_filter == ''
+      run: npm run test:full-parallel
+      env:
+        CI: true
+    
+    - name: Run comprehensive tests - Small capacities
+      if: github.event.inputs.capacity_filter == 'small'
+      run: npm run test:small
+      env:
+        CI: true
+    
+    - name: Run comprehensive tests - Large capacities
+      if: github.event.inputs.capacity_filter == 'large'
+      run: npm run test:large
+      env:
+        CI: true
+    
+    - name: Generate test summary
+      if: always()
+      run: |
+        echo "## Comprehensive Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "- Browser: ${{ matrix.browser }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Capacity filter: ${{ github.event.inputs.capacity_filter || 'all' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Test completion time: $(date)" >> $GITHUB_STEP_SUMMARY
+        
+        # Count test results if available
+        if [ -f "test-results/results.json" ]; then
+          TOTAL_TESTS=$(jq '.suites[0].specs | length' test-results/results.json 2>/dev/null || echo "Unknown")
+          echo "- Total tests executed: $TOTAL_TESTS" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Upload HTML Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: comprehensive-playwright-report-${{ matrix.browser }}
+        path: playwright-report/
+        retention-days: 30
+    
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: comprehensive-test-results-${{ matrix.browser }}
+        path: test-results/
+        retention-days: 14
+    
+    - name: Upload Screenshots
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: comprehensive-screenshots-${{ matrix.browser }}
+        path: screenshots/
+        retention-days: 14
+    
+    - name: Upload Videos
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: comprehensive-videos-${{ matrix.browser }}
+        path: test-results/**/videos/
+        retention-days: 7
+
+  # Slack/Teams notification (optional - requires secrets setup)
+  notify-on-failure:
+    if: failure()
+    needs: comprehensive-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Notify on failure
+      run: |
+        echo "## ❌ Nightly Tests Failed" >> $GITHUB_STEP_SUMMARY
+        echo "The comprehensive nightly tests have failed. Please check the test results." >> $GITHUB_STEP_SUMMARY
+        echo "- Failed job: comprehensive-test" >> $GITHUB_STEP_SUMMARY
+        echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
