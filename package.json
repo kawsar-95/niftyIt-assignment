@@ -1,0 +1,36 @@
+{
+  "name": "denowatts-quote-automation",
+  "version": "2.0.0",
+  "description": "Comprehensive automated testing for Denowatts quote creation with 40 test combinations covering AC nameplate, mounting types, module technologies, and service periods",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:single": "playwright test tests/quote-creation.spec.ts --reporter=list --max-failures=1 --workers=1",
+    "test:parallel": "playwright test tests/quote-creation.spec.ts --reporter=list --workers=4 --max-failures=3",
+    "test:parallel-fast": "playwright test tests/quote-creation.spec.ts --reporter=line --workers=6 --max-failures=5",
+    "test:all": "playwright test tests/quote-creation.spec.ts --reporter=html --workers=4",
+    "test:debug": "playwright test tests/quote-creation.spec.ts --reporter=list --headed --workers=1 --max-failures=1",
+    "test:small": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"0.5MW|5MW\" --workers=2",
+    "test:large": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"40MW|120MW\" --workers=2",
+    "test:monofacial": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"Monofacial\" --workers=3",
+    "test:bifacial": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"Bifacial\" --workers=3",
+    "test:mounting": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"GroundFixed|Carport\" --workers=2",
+    "test:tracker": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"GroundTracker|Rooftop\" --workers=2",
+    "test:quick": "playwright test tests/quote-creation.spec.ts --reporter=list --grep=\"0.5MW.*(Carport|GroundFixed).*Monofacial.*1yr\" --workers=1",
+    "test:full-parallel": "playwright test tests/quote-creation.spec.ts --reporter=html --workers=8 --timeout=300000",
+    "test:headed": "playwright test --headed --workers=1",
+    "test:clean": "rm -rf test-results screenshots playwright-report && npm run test:parallel",
+    "install:browsers": "playwright install",
+    "report": "playwright show-report",
+    "debug:cellular": "playwright test tests/debug-cellular.spec.ts --reporter=list --headed --workers=1",
+    "debug:navigation": "playwright test tests/debug-navigation.spec.ts --reporter=list --headed --workers=1"
+  },
+  "keywords": ["playwright", "automation", "testing", "denowatts", "solar", "quote-automation", "e2e-testing", "parallel-testing"],
+  "author": "Nuruddin Kawsar",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
