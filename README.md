@@ -1,8 +1,13 @@
 # 🌞 Denowatts Quote Automation Framework
 
+[![Playwright Tests](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/playwright-tests.yml/badge.svg)](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/playwright-tests.yml)
+[![Quick CI](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/quick-ci.yml/badge.svg)](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/quick-ci.yml)
+[![Security Checks](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/security-checks.yml/badge.svg)](https://github.com/kawsar-95/niftyIt-assignment/actions/workflows/security-checks.yml)
+
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=microsoft&logoColor=white)](https://playwright.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
 
 > **Comprehensive end-to-end automation framework for Denowatts solar quote creation system with 40-test matrix coverage**
 
@@ -15,6 +20,7 @@
 - [Installation](#-installation)
 - [Usage](#-usage)
 - [Test Execution](#-test-execution)
+- [CI/CD with GitHub Actions](#-cicd-with-github-actions)
 - [Configuration](#-configuration)
 - [Project Structure](#-project-structure)
 - [Contributing](#-contributing)
@@ -201,6 +207,49 @@ npm test
 # Generate JSON results for CI
 npm run test:all
 ```
+
+## 🚀 CI/CD with GitHub Actions
+
+This project includes comprehensive GitHub Actions workflows for automated testing and deployment:
+
+### 🔄 Available Workflows
+
+1. **Playwright Tests** - Main test execution with parallel processing
+2. **Quick CI Check** - Fast smoke tests for PRs
+3. **Nightly Comprehensive Tests** - Full test suite execution
+4. **Security & Dependency Checks** - Automated security audits
+
+### 📊 Workflow Status
+
+The workflows run automatically on:
+- **Push** to main/master/develop branches
+- **Pull Requests** to main/master
+- **Daily** at scheduled times
+- **Manual dispatch** for custom test runs
+
+### 🎮 Manual Test Execution
+
+Access **Actions** tab in GitHub to manually trigger workflows:
+
+```bash
+# Available test types for manual dispatch:
+- all           # Complete test suite
+- quick         # Smoke tests only  
+- parallel      # Parallel execution
+- small         # 0.5MW and 5MW capacities
+- large         # 40MW and 120MW capacities
+- monofacial    # Monofacial modules only
+- bifacial      # Bifacial modules only
+```
+
+### 📈 Reports & Artifacts
+
+- **HTML Reports**: Auto-generated with screenshots and traces
+- **GitHub Pages**: Automatic deployment of test reports
+- **Artifacts**: Screenshots, videos, and test results (7-30 day retention)
+- **Parallel Execution**: Test results merged from multiple worker groups
+
+For detailed CI/CD documentation, see [`.github/README.md`](.github/README.md)
 
 ## ⚙️ Configuration
 
