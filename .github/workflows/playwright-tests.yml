@@ -127,26 +127,8 @@ jobs:
     - name: Merge HTML Reports
       run: |
         mkdir -p merged-report
-        if [ -d "all-reports" ] && [ "$(find all-reports -name '*.json' -o -name 'index.html' | head -1)" ]; then
-          echo "Found report files to merge"
-          npx playwright merge-reports --reporter html --output-dir merged-report all-reports || {
-            echo "Failed to merge reports, creating basic report structure"
-            mkdir -p merged-report
-            echo "<html><body><h1>Test Reports</h1><p>Report generation failed, but tests may have run successfully.</p></body></html>" > merged-report/index.html
-          }
-        else
-          echo "No report files found to merge, creating placeholder"
-          mkdir -p merged-report
-          echo "<html><body><h1>No Test Reports</h1><p>No test reports were generated in this run.</p></body></html>" > merged-report/index.html
-        fi
-        
-        # Verify the merged report was created
-        if [ -f "merged-report/index.html" ]; then
-          echo "✅ Merged report created successfully"
-          ls -la merged-report/
-        else
-          echo "❌ Failed to create merged report"
-          exit 1
+        if [ -d "all-reports" ]; then
+          npx playwright merge-reports --reporter html all-reports || echo "No reports to merge"
         fi
     
     - name: Upload merged report
@@ -159,10 +141,7 @@ jobs:
 
   # Deploy report to GitHub Pages (optional)
   deploy-report:
-    if: |
-      always() && 
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
-      needs.merge-reports.result == 'success'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     needs: merge-reports
     runs-on: ubuntu-latest
     permissions:
@@ -180,39 +159,18 @@ jobs:
       with:
         name: merged-playwright-report
         path: ./report
-      continue-on-error: true
-    
-    - name: Check if report exists
-      id: check-report
-      run: |
-        if [ -d "./report" ] && [ "$(ls -A ./report)" ]; then
-          echo "Report exists and is not empty"
-          echo "deploy=true" >> $GITHUB_OUTPUT
-        else
-          echo "Report does not exist or is empty"
-          echo "deploy=false" >> $GITHUB_OUTPUT
-        fi
     
     - name: Setup Pages
-      if: steps.check-report.outputs.deploy == 'true'
-      uses: actions/configure-pages@v4
+      uses: actions/configure-pages@v3
     
     - name: Upload to GitHub Pages
-      if: steps.check-report.outputs.deploy == 'true'
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v2
       with:
         path: ./report
     
     - name: Deploy to GitHub Pages
-      if: steps.check-report.outputs.deploy == 'true'
       id: deployment
-      uses: actions/deploy-pages@v4
-    
-    - name: Skip deployment message
-      if: steps.check-report.outputs.deploy == 'false'
-      run: |
-        echo "## ⚠️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
-        echo "No report artifacts found to deploy to GitHub Pages." >> $GITHUB_STEP_SUMMARY
+      uses: actions/deploy-pages@v2
 
   # Notification job (optional)
   notify:
