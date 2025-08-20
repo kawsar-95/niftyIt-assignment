@@ -1,14 +1,14 @@
-name: Quick CI Check
+name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, develop ]
 
 jobs:
-  quick-test:
-    timeout-minutes: 30
+  test:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     
     steps:
@@ -26,10 +26,9 @@ jobs:
       run: npx playwright install chromium --with-deps
     
     - name: Lint and type check
-      run: |
-        npx tsc --noEmit
+      run: npx tsc --noEmit
     
-    - name: Run quick smoke tests
+    - name: Run tests
       run: npm run test:quick
       env:
         CI: true
@@ -38,8 +37,9 @@ jobs:
       uses: actions/upload-artifact@v4
       if: failure()
       with:
-        name: quick-test-results
+        name: test-results
         path: |
           test-results/
+          playwright-report/
           screenshots/
-        retention-days: 3
+        retention-days: 7
