@@ -1,0 +1,201 @@
+name: Monitor Dev Portal Changes
+
+on:
+  schedule:
+    # Check every 30 minutes during business hours (UTC)
+    - cron: '0,30 6-18 * * 1-5'  # Every 30 min, 6 AM - 6 PM UTC, Mon-Fri
+    - cron: '0 */2 * * 0,6'      # Every 2 hours on weekends
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run tests regardless of changes'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  monitor-website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Check website for changes
+      id: check-changes
+      run: |
+        echo "🔍 Checking dev.portal.denowatts.com for changes..."
+        
+        # Create a simple hash of the website content
+        WEBSITE_HASH=$(curl -s https://dev.portal.denowatts.com/ | sha256sum | cut -d' ' -f1)
+        
+        # Store the hash for comparison
+        echo "current_hash=$WEBSITE_HASH" >> $GITHUB_OUTPUT
+        
+        # Check if we have a previous hash
+        if [ -f ".website-hash" ]; then
+          PREVIOUS_HASH=$(cat .website-hash)
+          echo "previous_hash=$PREVIOUS_HASH" >> $GITHUB_OUTPUT
+          
+          if [ "$WEBSITE_HASH" != "$PREVIOUS_HASH" ]; then
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+            echo "🔄 Changes detected in dev.portal.denowatts.com"
+          else
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+            echo "✅ No changes detected"
+          fi
+        else
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+          echo "🔄 First run - treating as change detected"
+        fi
+        
+        # Save current hash
+        echo "$WEBSITE_HASH" > .website-hash
+        
+        # Check if force run is requested
+        if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+          echo "🔄 Force run requested"
+        fi
+    
+    - name: Upload website hash
+      uses: actions/upload-artifact@v4
+      with:
+        name: website-hash
+        path: .website-hash
+        retention-days: 1
+
+  run-tests:
+    needs: monitor-website
+    runs-on: ubuntu-latest
+    if: needs.monitor-website.outputs.changes_detected == 'true'
+    timeout-minutes: 120
+    
+    strategy:
+      matrix:
+        browser: [chromium, firefox]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+    
+    - name: Run comprehensive tests
+      run: npm run test:parallel
+      env:
+        CI: true
+        NODE_ENV: production
+        TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL || 'nuruddinkawsar1995@gmail.com' }}
+        TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD || 'Test@1234' }}
+        DEV_PORTAL_URL: ${{ secrets.DEV_PORTAL_URL || 'https://dev.portal.denowatts.com' }}
+    
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "📊 Generating test report..."
+        npx playwright show-report --host 0.0.0.0 --port 9323 &
+        sleep 10
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.browser }}
+        path: |
+          test-results/
+          playwright-report/
+          screenshots/
+        retention-days: 30
+    
+    - name: Upload HTML report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report-${{ matrix.browser }}
+        path: playwright-report/
+        retention-days: 30
+
+  notify-slack:
+    needs: [monitor-website, run-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Generate notification message
+      id: generate-message
+      run: |
+        if [ "${{ needs.monitor-website.outputs.changes_detected }}" = "true" ]; then
+          if [ "${{ needs.run-tests.result }}" = "success" ]; then
+            STATUS="✅ SUCCESS"
+            EMOJI="🎉"
+            MESSAGE="All tests passed after dev.portal changes"
+          elif [ "${{ needs.run-tests.result }}" = "failure" ]; then
+            STATUS="❌ FAILED"
+            EMOJI="⚠️"
+            MESSAGE="Tests failed after dev.portal changes - investigation needed"
+          else
+            STATUS="⚠️ UNKNOWN"
+            EMOJI="❓"
+            MESSAGE="Test status unclear after dev.portal changes"
+          fi
+        else
+          STATUS="ℹ️ NO CHANGES"
+          EMOJI="✅"
+          MESSAGE="No changes detected in dev.portal - tests not triggered"
+        fi
+        
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+        echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+    
+    - name: Send Slack notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ needs.run-tests.result || 'success' }}
+        channel: '#denowatts-automation'
+        text: |
+          ${{ steps.generate-message.outputs.emoji }} **Dev Portal Monitoring Report**
+          
+          **Status**: ${{ steps.generate-message.outputs.status }}
+          **Trigger**: ${{ github.event_name }}
+          **Time**: $(date -u)
+          
+          📋 **Details**:
+          ${{ steps.generate-message.outputs.message }}
+          
+          🔗 **Links**:
+          - [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - [Test Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
+          - [Dev Portal](https://dev.portal.denowatts.com/)
+          
+          📊 **Test Results**:
+          - Browser: ${{ matrix.browser }}
+          - Result: ${{ needs.run-tests.result }}
+          
+          🕐 **Next Check**: ${{ github.event_name == 'schedule' && '30 minutes' || 'Manual trigger' }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
