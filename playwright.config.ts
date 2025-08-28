@@ -17,7 +17,7 @@ export default defineConfig({
     timeout: 30000, // 30 seconds for expects
   },
   use: {
-    baseURL: 'https://portal.denowatts.com',
+    baseURL: 'https://dev.portal.denowatts.com',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

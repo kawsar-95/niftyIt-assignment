@@ -1,4 +1,4 @@
-import { Page, Locator } from '@playwright/test';
+import { Locator, Page } from '@playwright/test';
 
 export class LoginPage {
   readonly page: Page;
@@ -66,7 +66,7 @@ export class LoginPage {
     console.log('🌐 Navigating to login page...');
 
     // Navigate and wait for network to settle
-    await this.page.goto('https://portal.denowatts.com/signin', {
+    await this.page.goto('https://dev.portal.denowatts.com/signin', {
       waitUntil: 'networkidle', // Wait for network to be idle (React app loaded)
       timeout: 120000 // 2 minutes
     });

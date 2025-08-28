@@ -1,4 +1,4 @@
-import { Page, Locator } from '@playwright/test';
+import { Locator, Page } from '@playwright/test';
 
 export class QuoteCreationPage {
   readonly page: Page;
@@ -125,7 +125,7 @@ export class QuoteCreationPage {
       console.log(`⚠️ Navigation issue detected! Expected to stay on /create page but got redirected to: ${currentUrl}`);
       // Try to navigate back to quote creation
       console.log('🔄 Attempting to navigate back to quote creation...');
-      await this.page.goto('https://portal.denowatts.com/settings/quote-management/create', {
+      await this.page.goto('https://dev.portal.denowatts.com/settings/quote-management/create', {
         waitUntil: 'networkidle',
         timeout: 30000
       });

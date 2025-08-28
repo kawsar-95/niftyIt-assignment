@@ -1,8 +1,8 @@
 
-import { test, expect, Page } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
+import { testData } from '../fixtures/testData';
 import { LoginPage } from '../pages/LoginPage';
 import { QuoteCreationPage } from '../pages/QuoteCreationPage';
-import { testData } from '../fixtures/testData';
 
 // Increase timeout for very slow internet
 test.setTimeout(600000); // 10 minutes
@@ -88,7 +88,7 @@ test.describe('Denowatts Quote Creation Process', () => {
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
     // Verify we're on quote management page
-    expect(page.url()).toBe('https://portal.denowatts.com/settings/quote-management');
+    expect(page.url()).toBe('https://dev.portal.denowatts.com/settings/quote-management');
     console.log('✅ Reached Quote Management page');
 
     // Click Create Quote button
@@ -98,7 +98,7 @@ test.describe('Denowatts Quote Creation Process', () => {
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
     // Verify we're on quote creation page
-    expect(page.url()).toBe('https://portal.denowatts.com/settings/quote-management/create');
+    expect(page.url()).toBe('https://dev.portal.denowatts.com/settings/quote-management/create');
     console.log('✅ Reached Quote Creation page');
   }
 
