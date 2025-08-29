@@ -1,0 +1,444 @@
+name: Enhanced Dev Portal Monitor & Test Runner
+
+on:
+  repository_dispatch:
+    types: [dev-portal-changed, manual-test-trigger]
+  schedule:
+    # Check every 15 minutes during business hours (UTC)
+    - cron: '0,15,30,45 6-18 * * 1-5'  # Every 15 min, 6 AM - 6 PM UTC, Mon-Fri
+    - cron: '0 */1 * * 0,6'             # Every hour on weekends
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force run tests regardless of changes'
+        required: false
+        default: 'false'
+        type: boolean
+      test_suite:
+        description: 'Specific test suite to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - quick
+          - parallel
+          - monofacial
+          - bifacial
+          - mounting
+
+env:
+  DEV_PORTAL_URL: https://dev.portal.denowatts.com
+  TEST_TIMEOUT: 120
+
+jobs:
+  monitor-and-detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      changes_detected: ${{ steps.detect-changes.outputs.changes_detected }}
+      portal_status: ${{ steps.detect-changes.outputs.portal_status }}
+      change_hash: ${{ steps.detect-changes.outputs.change_hash }}
+      trigger_reason: ${{ steps.detect-changes.outputs.trigger_reason }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Detect portal changes
+      id: detect-changes
+      run: |
+        echo "🔍 Enhanced monitoring of $DEV_PORTAL_URL..."
+        
+        # Download website content with headers
+        RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" \
+          -H "User-Agent: DenowattsMonitor/2.0" \
+          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          -H "Accept-Language: en-US,en;q=0.5" \
+          -H "Cache-Control: no-cache" \
+          --max-time 30 \
+          "$DEV_PORTAL_URL")
+        
+        # Extract content, status code, and response time
+        CONTENT=$(echo "$RESPONSE" | head -n -2)
+        STATUS_CODE=$(echo "$RESPONSE" | tail -n 2 | head -n 1)
+        RESPONSE_TIME=$(echo "$RESPONSE" | tail -n 1)
+        
+        # Generate comprehensive hash including headers
+        HEADERS=$(curl -s -I -w "\n" \
+          -H "User-Agent: DenowattsMonitor/2.0" \
+          --max-time 10 \
+          "$DEV_PORTAL_URL")
+        
+        FULL_HASH=$(echo -e "$CONTENT\n$HEADERS" | sha256sum | cut -d' ' -f1)
+        
+        echo "portal_status=$STATUS_CODE" >> $GITHUB_OUTPUT
+        echo "change_hash=$FULL_HASH" >> $GITHUB_OUTPUT
+        echo "response_time=$RESPONSE_TIME" >> $GITHUB_OUTPUT
+        
+        # Determine trigger reason
+        if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+          TRIGGER_REASON="${{ github.event.client_payload.reason || 'Webhook trigger' }}"
+        elif [ "${{ github.event_name }}" == "schedule" ]; then
+          TRIGGER_REASON="Scheduled check"
+        elif [ "${{ github.event.inputs.force_run }}" == "true" ]; then
+          TRIGGER_REASON="Manual force run"
+        else
+          TRIGGER_REASON="Manual trigger"
+        fi
+        echo "trigger_reason=$TRIGGER_REASON" >> $GITHUB_OUTPUT
+        
+        # Check for changes
+        if [ -f ".website-hash" ]; then
+          PREVIOUS_HASH=$(cat .website-hash)
+          if [ "$FULL_HASH" != "$PREVIOUS_HASH" ]; then
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+            echo "🔄 Changes detected in dev portal!"
+            echo "Previous: ${PREVIOUS_HASH:0:8}..."
+            echo "Current:  ${FULL_HASH:0:8}..."
+          else
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+            echo "✅ No changes detected"
+          fi
+        else
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+          echo "🔄 First run - treating as change detected"
+        fi
+        
+        # Save current hash
+        echo "$FULL_HASH" > .website-hash
+        
+        # Force run check
+        if [ "${{ github.event.inputs.force_run }}" == "true" ]; then
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+          echo "🔄 Force run requested"
+        fi
+        
+        echo "📊 Portal Status: $STATUS_CODE"
+        echo "⏱️ Response Time: ${RESPONSE_TIME}s"
+    
+    - name: Upload monitoring data
+      uses: actions/upload-artifact@v4
+      with:
+        name: monitoring-data
+        path: |
+          .website-hash
+        retention-days: 7
+
+  run-comprehensive-tests:
+    needs: monitor-and-detect
+    runs-on: ubuntu-latest
+    if: needs.monitor-and-detect.outputs.changes_detected == 'true'
+    timeout-minutes: ${{ env.TEST_TIMEOUT }}
+    
+    strategy:
+      matrix:
+        browser: [chromium]
+        include:
+          - browser: chromium
+            display_name: Chrome
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+    
+    - name: Determine test command
+      id: test-command
+      run: |
+        TEST_SUITE="${{ github.event.inputs.test_suite || 'all' }}"
+        case $TEST_SUITE in
+          "quick")
+            echo "command=npm run test:quick" >> $GITHUB_OUTPUT
+            echo "suite_name=Quick Test Suite" >> $GITHUB_OUTPUT
+            ;;
+          "parallel")
+            echo "command=npm run test:parallel" >> $GITHUB_OUTPUT
+            echo "suite_name=Parallel Test Suite" >> $GITHUB_OUTPUT
+            ;;
+          "monofacial")
+            echo "command=npm run test:monofacial" >> $GITHUB_OUTPUT
+            echo "suite_name=Monofacial Test Suite" >> $GITHUB_OUTPUT
+            ;;
+          "bifacial")
+            echo "command=npm run test:bifacial" >> $GITHUB_OUTPUT
+            echo "suite_name=Bifacial Test Suite" >> $GITHUB_OUTPUT
+            ;;
+          "mounting")
+            echo "command=npm run test:mounting" >> $GITHUB_OUTPUT
+            echo "suite_name=Mounting Test Suite" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "command=npm run test:parallel" >> $GITHUB_OUTPUT
+            echo "suite_name=Comprehensive Test Suite" >> $GITHUB_OUTPUT
+            ;;
+        esac
+    
+    - name: Run tests
+      id: run-tests
+      run: |
+        echo "🚀 Running ${{ steps.test-command.outputs.suite_name }}..."
+        echo "Command: ${{ steps.test-command.outputs.command }}"
+        
+        # Start timer
+        START_TIME=$(date +%s)
+        
+        # Run tests with detailed output
+        ${{ steps.test-command.outputs.command }} 2>&1 | tee test-output.log
+        
+        # Capture exit code
+        EXIT_CODE=${PIPESTATUS[0]}
+        
+        # End timer
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "test_status=success" >> $GITHUB_OUTPUT
+          echo "test_message=All tests passed successfully" >> $GITHUB_OUTPUT
+        else
+          echo "test_status=failure" >> $GITHUB_OUTPUT
+          echo "test_message=Some tests failed - check logs for details" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "⏱️ Test duration: ${DURATION}s"
+        echo "📊 Exit code: $EXIT_CODE"
+      env:
+        CI: true
+        NODE_ENV: production
+        TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL || 'nuruddinkawsar1995@gmail.com' }}
+        TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD || 'Test@1234' }}
+        DEV_PORTAL_URL: ${{ env.DEV_PORTAL_URL }}
+        PLAYWRIGHT_BROWSERS_PATH: 0
+    
+    - name: Generate detailed test report
+      if: always()
+      run: |
+        echo "📊 Generating comprehensive test report..."
+        
+        # Create detailed report
+        cat > test-summary.md << EOF
+        # Test Execution Summary
+        
+        **Suite**: ${{ steps.test-command.outputs.suite_name }}
+        **Browser**: ${{ matrix.display_name }}
+        **Duration**: ${{ steps.run-tests.outputs.duration }}s
+        **Status**: ${{ steps.run-tests.outputs.test_status }}
+        **Trigger**: ${{ needs.monitor-and-detect.outputs.trigger_reason }}
+        **Portal Status**: ${{ needs.monitor-and-detect.outputs.portal_status }}
+        
+        ## Test Output
+        \`\`\`
+        $(tail -n 50 test-output.log)
+        \`\`\`
+        EOF
+        
+        # Generate JSON report if available
+        if [ -f "test-results/results.json" ]; then
+          echo "📄 JSON results available"
+        fi
+        
+        # Generate HTML report
+        npx playwright show-report --host 0.0.0.0 --port 9323 &
+        sleep 15
+    
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.browser }}-${{ github.run_id }}
+        path: |
+          test-results/
+          playwright-report/
+          screenshots/
+          test-output.log
+          test-summary.md
+        retention-days: 30
+    
+    - name: Upload HTML report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report-${{ matrix.browser }}-${{ github.run_id }}
+        path: playwright-report/
+        retention-days: 30
+
+  generate-slack-report:
+    needs: [monitor-and-detect, run-comprehensive-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download test artifacts
+      if: needs.run-comprehensive-tests.result != 'skipped'
+      uses: actions/download-artifact@v4
+      with:
+        name: test-results-chromium-${{ github.run_id }}
+        path: ./test-artifacts
+    
+    - name: Generate comprehensive Slack report
+      id: generate-report
+      run: |
+        echo "📊 Generating comprehensive Slack report..."
+        
+        # Determine overall status
+        if [ "${{ needs.monitor-and-detect.outputs.changes_detected }}" = "true" ]; then
+          if [ "${{ needs.run-comprehensive-tests.result }}" = "success" ]; then
+            STATUS="✅ SUCCESS"
+            EMOJI="🎉"
+            COLOR="good"
+            MESSAGE="All tests passed after dev portal changes"
+          elif [ "${{ needs.run-comprehensive-tests.result }}" = "failure" ]; then
+            STATUS="❌ FAILED"
+            EMOJI="⚠️"
+            COLOR="danger"
+            MESSAGE="Tests failed after dev portal changes - investigation needed"
+          else
+            STATUS="⚠️ UNKNOWN"
+            EMOJI="❓"
+            COLOR="warning"
+            MESSAGE="Test status unclear after dev portal changes"
+          fi
+        else
+          STATUS="ℹ️ NO CHANGES"
+          EMOJI="✅"
+          COLOR="good"
+          MESSAGE="No changes detected in dev portal - tests not triggered"
+        fi
+        
+        # Get test details
+        TEST_DURATION="${{ needs.run-comprehensive-tests.outputs.duration || 'N/A' }}"
+        TEST_STATUS="${{ needs.run-comprehensive-tests.outputs.test_status || 'N/A' }}"
+        TEST_MESSAGE="${{ needs.run-comprehensive-tests.outputs.test_message || 'N/A' }}"
+        
+        # Generate detailed message
+        DETAILED_MESSAGE=""
+        if [ "${{ needs.run-comprehensive-tests.result }}" != "skipped" ]; then
+          DETAILED_MESSAGE="
+          📋 **Test Details**:
+          • Duration: ${TEST_DURATION}s
+          • Status: ${TEST_STATUS}
+          • Message: ${TEST_MESSAGE}
+          • Browser: Chrome
+          • Suite: ${{ needs.run-comprehensive-tests.outputs.suite_name || 'Comprehensive' }}"
+        fi
+        
+        # Create Slack payload
+        cat > slack-payload.json << EOF
+        {
+          "attachments": [
+            {
+              "color": "${COLOR}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${EMOJI} Dev Portal Monitoring Report"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${STATUS}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Trigger:*\n${{ needs.monitor-and-detect.outputs.trigger_reason }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Portal Status:*\n${{ needs.monitor-and-detect.outputs.portal_status }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Time:*\n$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Details:*\n${MESSAGE}${DETAILED_MESSAGE}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Links:*\n• <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|Workflow Run>\n• <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts|Test Artifacts>\n• <${{ env.DEV_PORTAL_URL }}|Dev Portal>"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+        EOF
+        
+        echo "slack_payload=slack-payload.json" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "color=$COLOR" >> $GITHUB_OUTPUT
+    
+    - name: Send Slack notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ needs.run-comprehensive-tests.result || 'success' }}
+        channel: '#denowatts-automation'
+        payload_file_path: ${{ steps.generate-report.outputs.slack_payload }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  notify-failure:
+    needs: [monitor-and-detect, run-comprehensive-tests]
+    runs-on: ubuntu-latest
+    if: failure()
+    
+    steps:
+    - name: Send failure notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#denowatts-automation'
+        text: |
+          🚨 **Workflow Failure Alert**
+          
+          The enhanced monitoring workflow has failed!
+          
+          **Trigger**: ${{ needs.monitor-and-detect.outputs.trigger_reason }}
+          **Portal Status**: ${{ needs.monitor-and-detect.outputs.portal_status }}
+          **Time**: $(date -u)
+          
+          🔗 [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          
+          Please investigate the failure immediately.
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
