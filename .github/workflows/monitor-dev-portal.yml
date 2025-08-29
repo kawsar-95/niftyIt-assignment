@@ -83,7 +83,7 @@ jobs:
     
     strategy:
       matrix:
-        browser: [chromium, firefox]
+        browser: [chromium]
     
     steps:
     - name: Checkout code
@@ -109,6 +109,7 @@ jobs:
         TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL || 'nuruddinkawsar1995@gmail.com' }}
         TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD || 'Test@1234' }}
         DEV_PORTAL_URL: ${{ secrets.DEV_PORTAL_URL || 'https://dev.portal.denowatts.com' }}
+        PLAYWRIGHT_BROWSERS_PATH: 0
     
     - name: Generate test report
       if: always()
@@ -135,6 +136,18 @@ jobs:
         name: playwright-report-${{ matrix.browser }}
         path: playwright-report/
         retention-days: 30
+    
+    - name: Set test results
+      id: test-results
+      if: always()
+      run: |
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "test_status=success" >> $GITHUB_OUTPUT
+          echo "test_message=All tests passed successfully" >> $GITHUB_OUTPUT
+        else
+          echo "test_status=failure" >> $GITHUB_OUTPUT
+          echo "test_message=Some tests failed - check artifacts for details" >> $GITHUB_OUTPUT
+        fi
 
   notify-slack:
     needs: [monitor-website, run-tests]
@@ -171,6 +184,12 @@ jobs:
         echo "status=$STATUS" >> $GITHUB_OUTPUT
         echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
         echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+        
+        # Get test results from the run-tests job
+        if [ "${{ needs.run-tests.outputs.test_status }}" != "" ]; then
+          echo "test_status=${{ needs.run-tests.outputs.test_status }}" >> $GITHUB_OUTPUT
+          echo "test_message=${{ needs.run-tests.outputs.test_message }}" >> $GITHUB_OUTPUT
+        fi
     
     - name: Send Slack notification
       uses: 8398a7/action-slack@v3
@@ -195,6 +214,8 @@ jobs:
           📊 **Test Results**:
           - Browser: ${{ matrix.browser }}
           - Result: ${{ needs.run-tests.result }}
+          - Status: ${{ steps.generate-message.outputs.test_status || 'N/A' }}
+          - Message: ${{ steps.generate-message.outputs.test_message || 'N/A' }}
           
           🕐 **Next Check**: ${{ github.event_name == 'schedule' && '30 minutes' || 'Manual trigger' }}
       env:

@@ -21,7 +21,14 @@
     "test:headed": "playwright test --headed --workers=1",
     "test:clean": "rm -rf test-results screenshots playwright-report && npm run test:parallel",
     "install:browsers": "playwright install",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "monitor:start": "node scripts/monitor-dev-portal.js",
+    "monitor:test": "node scripts/test-webhook.js",
+    "webhook:trigger": "curl -X POST -H \"Authorization: token $GITHUB_TOKEN\" -H \"Accept: application/vnd.github.v3+json\" https://api.github.com/repos/kawsar-95/niftyIt-assignment/dispatches -d '{\"event_type\":\"dev-portal-changed\",\"client_payload\":{\"reason\":\"Manual trigger\",\"sender\":\"CLI\"}}'",
+    "webhook:test": "node scripts/test-webhook.js",
+    "setup": "./scripts/setup.sh",
+    "set-env": "./scripts/set-env.sh",
+    "load-env": "./scripts/load-env.sh"
   },
   "keywords": ["playwright", "automation", "testing", "denowatts", "solar", "quote-automation", "e2e-testing", "parallel-testing"],
   "author": "Nuruddin Kawsar",
