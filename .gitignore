@@ -28,3 +28,10 @@ FIXES_APPLIED.md
 *.swp
 *.swo
 *~
+
+# Monitoring files
+.website-hash
+
+# Environment files
+.env
+.env.local
